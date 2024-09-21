@@ -1,5 +1,5 @@
 import math, numpy as np, pygame #noqa F401
-from neural_net import NeuralNetwork
+from neural_net import NeuroNet
 from tqdm import tqdm
 
 class Robot:
@@ -7,7 +7,7 @@ class Robot:
         self.x = x
         self.y = y
         self.angle = 0
-        self.speed = 0.1
+        self.speed = 1
         self.size = 20
         self.collected_trash = 0  # Счетчик собранного мусора
 
@@ -51,143 +51,64 @@ class Robot:
             distance = math.sqrt((trash.x - self.x) ** 2 + (trash.y - self.y) ** 2)
             if distance < self.size + trash.size:  # Если робот соприкоснулся с мусором
                 trashes.remove(trash)
-                self.collected_trash += 1  # Увеличиваем счетчик собранного мусора
+                return 1  # Увеличиваем счетчик собранного мусора
+        return 0
 
-class RobotWithNN(Robot):
+class LearningRobot(Robot):
     def __init__(self, x, y):
         super().__init__(x, y)
-        self.nn = self.train()
+        self.brain = NeuroNet()  # Нейронная сеть для принятия решений
+        self.last_distance = None  # Для хранения предыдущего расстояния до мусора
 
     def update(self, trashes):
-        # Получаем информацию о ближайшем мусоре
-        distance, direction = self.find_closest_trash(trashes)
-        
-        # Подготавливаем входные данные для нейронной сети
-        inputs = [self.x, self.y, distance, direction]
-        
-        # Получаем выходные данные от сети (управление моторами)
-        motor_speeds = self.nn.forward(inputs)
-        
-        # Используем эти данные для обновления скорости моторов
-        left_motor_speed, right_motor_speed = motor_speeds
-        
-        # Ограничиваем значения скоростей для моторов
-        left_motor_speed = max(min(left_motor_speed, 1), -1)
-        right_motor_speed = max(min(right_motor_speed, 1), -1)
-        
-        # Обновляем положение робота
-        super().update(left_motor_speed, right_motor_speed)
-    
-    def train(self):
-        # Пример обучающих данных (упрощенные для демонстрации)
-        training_data = [
-            {"inputs": [400, 300, 50, 30], "outputs": [0.5, 0.5]},   # Робот далеко от мусора, оба мотора движутся вперед
-            {"inputs": [100, 200, 20, -45], "outputs": [1, 0.2]},    # Мусор слева, нужно поворачивать направо
-            {"inputs": [600, 500, 10, 45], "outputs": [0.2, 1]},     # Мусор справа, нужно поворачивать налево
-            {"inputs": [200, 100, 100, 0], "outputs": [0.7, 0.7]},   # Мусор впереди, оба мотора движутся вперед
-            {"inputs": [300, 200, 15, 0], "outputs": [0.8, 0.8]},  # Мусор близко, оба мотора движутся вперед
-            {"inputs": [50, 100, 5, -60], "outputs": [1.0, 0.1]},  # Мусор очень близко слева, сильный поворот направо
-            {"inputs": [500, 400, 8, 60], "outputs": [0.1, 1.0]},  # Мусор очень близко справа, сильный поворот налево
-            {"inputs": [150, 150, 30, -15], "outputs": [0.9, 0.4]},  # Мусор слева, небольшой поворот направо
-            {"inputs": [450, 450, 25, 15], "outputs": [0.4, 0.9]},  # Мусор справа, небольшой поворот налево
-            {"inputs": [100, 100, 10, -90], "outputs": [1.0, 0.0]},  # Мусор очень близко слева, резкий поворот направо
-            {"inputs": [500, 500, 10, 90], "outputs": [0.0, 1.0]},  # Мусор очень близко справа, резкий поворот налево
-            {"inputs": [200, 200, 50, 0], "outputs": [0.6, 0.6]},   # Мусор далеко, но по центру, оба мотора движутся вперед
-            {"inputs": [200, 200, 10, 0], "outputs": [0.9, 0.9]},   # Мусор близко, по центру, оба мотора движутся вперед
-            {"inputs": [200, 200, 100, 0], "outputs": [0.8, 0.8]},  # Мусор близко, по центру, оба мотора движутся вперед (вариация)
-            {"inputs": [300, 300, 10, 0], "outputs": [0.9, 0.9]},  # Мусор близко, по центру, оба мотора движутся вперед (вариация)
-            {"inputs": [100, 100, 10, -30], "outputs": [1.0, 0.4]},  # Мусор слева, небольшой поворот направо
-            {"inputs": [400, 400, 10, 30], "outputs": [0.4, 1.0]},  # Мусор справа, небольшой поворот налево
-            {"inputs": [250, 250, 10, -10], "outputs": [0.9, 0.7]},  # Мусор слева, очень слабый поворот направо
-            {"inputs": [350, 350, 10, 10], "outputs": [0.7, 0.9]},  # Мусор справа, очень слабый поворот налево
-            {"inputs": [200, 200, 20, 0], "outputs": [0.8, 0.8]},  # Мусор близко, по центру, оба мотора движутся вперед (вариация)
-            {"inputs": [200, 200, 30, 0], "outputs": [0.9, 0.9]},  # Мусор близко, по центру, оба мотора движутся вперед (вариация)
-            {"inputs": [200, 200, 40, 0], "outputs": [0.95, 0.95]},  # Мусор близко, по центру, оба мотора движутся вперед (вариация)
-            {"inputs": [200, 200, 5, 0], "outputs": [0.7, 0.7]},   # Мусор очень близко, по центру, оба мотора движутся вперед
-            {"inputs": [100, 100, 5, 0], "outputs": [0.6, 0.6]},   # Мусор очень близко, по центру, оба мотора движутся вперед (вариация)
-            {"inputs": [50, 50, 5, 0], "outputs": [0.5, 0.5]},   # Мусор очень близко, по центру, оба мотора движутся вперед (вариация)
-            {"inputs": [200, 200, 10, -5], "outputs": [0.9, 0.8]},  # Мусор близко, чуть левее центра, оба мотора движутся вперед
-            {"inputs": [200, 200, 10, 5], "outputs": [0.8, 0.9]},  # Мусор близко, чуть правее центра, оба мотора движутся вперед
-        ]
+        # Найти ближайший мусор
+        distance, angle = self.find_closest_trash(trashes)
 
-        # Обучаем нейронную сеть с 4 входами, 10 скрытыми нейронами и 2 выходами
-        robot_nn = NeuralNetwork(num_inputs=4, num_hidden=10, num_outputs=2)
+        # Нормализуем входные данные для нейронной сети
+        inputs = np.array([distance, angle]).reshape(1, -1) / np.array([800, 180])
 
-        for _ in tqdm(range(10000)):
-            for data in training_data:
-                inputs = np.array(data['inputs'])
-                expected_outputs = np.array(data['outputs'])
-                robot_nn.train(inputs, expected_outputs, learning_rate=0.0001)
-        return robot_nn
+        # Используем нейронную сеть для предсказания скоростей моторов
+        motor_speeds = self.brain.predict(inputs)
 
-class QLearningRobot(Robot):
-    def __init__(self, x, y):
-        super().__init__(x, y)
-        self.q_table = np.zeros((800, 600, 360, 4))  # Пример Q-таблицы с 4 возможными действиями
-        self.alpha = 0.9  # Скорость обучения
-        self.gamma = 0.9  # Коэффициент дисконтирования будущих наград
-        self.epsilon = 0.1  # Вероятность случайного действия для эпсилон-жадной стратегии
-        self.actions = [(1.0, 1.0), (0.5, 1.0), (1.0, 0.5), (0.0, 0.0)]  # Действия: вперед, влево, вправо, остановка
-        self.reward = None
+        # Преобразуем выходы сети в скорости для моторов
+        left_motor_speed = motor_speeds[0, 0]
+        right_motor_speed = motor_speeds[0, 1]
 
-    def get_state(self):
-        # Преобразуем текущее положение и угол в состояние
-        x_state = min(int(self.x), 799)  # Ограничиваем x от 0 до 799
-        y_state = min(int(self.y), 599)  # Ограничиваем y от 0 до 599
-        angle_state = int(self.angle % 359)  # Угол в диапазоне от 0 до 359
-        return x_state, y_state, angle_state
-
-    def choose_action(self, state):
-        if np.random.uniform(0, 1) < self.epsilon:
-            # Случайное действие (исследование)
-            return np.random.randint(0, 4)
-        else:
-            # Выбираем действие с максимальным значением Q
-            return np.argmax(self.q_table[state])
-
-    def update_q_table(self, state, action, reward, new_state):
-        # Обновление Q-значения с использованием формулы Q-learning
-        best_future_q = np.max(self.q_table[new_state])  # Используем новое состояние
-        current_q = self.q_table[state][action]
-        self.q_table[state][action] = current_q + self.alpha * (reward + self.gamma * best_future_q - current_q)
-
-    def get_reward(self, old_distance, new_distance, collected_trash):
-        if collected_trash:
-            return +10  # Большая награда за сбор мусора
-        elif new_distance < old_distance:
-            return +10  # Награда за приближение к мусору
-        else:
-            return -5  # Штраф за удаление от мусора
-
-    def update(self, trashes):
-        # Получаем текущее состояние
-        state = self.get_state()
-
-        # Находим ближайший мусор и вычисляем расстояние и направление до него
-        distance, direction = self.find_closest_trash(trashes)
-
-        # Выбираем действие на основе текущего состояния
-        action = self.choose_action(state)
-
-        # Применяем действие (управляем моторами)
-        left_motor_speed, right_motor_speed = self.actions[action]
+        # Обновляем положение робота с учетом скоростей
         super().update(left_motor_speed, right_motor_speed)
 
-        # Проверяем сбор мусора и получаем новую информацию о расстоянии
-        collected_trash = self.collect_trash(trashes)
-        new_distance, _ = self.find_closest_trash(trashes)
+        # Если это не первый шаг, оцениваем награду за приближение к мусору
+        if self.last_distance is not None:
+            reward = self.calculate_reward(distance)
+            self.train_network(reward)
 
-        # Получаем новое состояние
-        new_state = self.get_state()
+        # Обновляем предыдущее расстояние
+        self.last_distance = distance
 
-        # Рассчитываем награду на основе изменений
-        self.reward = self.get_reward(distance, new_distance, collected_trash)
+    def calculate_reward(self, current_distance):  # sourcery skip: assign-if-exp
+        """Возвращает награду в зависимости от того, приближается ли робот к мусору"""
+        if current_distance < self.last_distance:
+            return 0.1  # Небольшая положительная награда за приближение к мусору
+        else:
+            return -0.1  # Отрицательная награда за отдаление от мусора
 
-        # Обновляем Q-таблицу
+    def collect_trash(self, trashes):
+        # Если робот собрал мусор, возвращаем вознаграждение и обучаем сеть
+        collected = super().collect_trash(trashes)
+        if collected:
+            # Обучаем сеть с наградой за сбор мусора
+            self.train_network(1)  # Награда за сбор мусора
 
-        self.update_q_table(state, action, self.reward, new_state)
-    def manual_reward(self, reward):
-        # Если игрок выдает награду, обновляем Q-таблицу с помощью вручную заданного значения
-        if self.last_state is not None and self.last_action is not None:
-            new_state = self.get_state()
-            self.update_q_table(self.last_state, self.last_action, reward, new_state)
+        # Если мусор не собран, продолжаем обучение с наградой за направление
+        else:
+            self.train_network(0)  # Награды нет
+
+        return collected
+
+    def train_network(self, reward):
+        """Обучает сеть на основе награды"""
+        # Если есть данные для тренировки
+        if self.last_distance is not None:
+            inputs = np.array([self.last_distance, reward]).reshape(1, -1)
+            expected_output = np.array([[reward, reward]])  # Ожидаемая награда
+            self.brain.train(inputs, expected_output)  # Тренируем сеть
