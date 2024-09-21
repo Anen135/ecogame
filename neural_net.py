@@ -1,4 +1,5 @@
 import numpy as np
+from tqdm import tqdm
 
 class NeuroNet:
     def __init__(self):
@@ -9,7 +10,7 @@ class NeuroNet:
     def sigmoid(self, x, der=False):
         return x * (1 - x) if der else 1 / (1 + np.exp(-x))
 
-    def train(self, inputs, expected_output, iterations=10000):
+    def train(self, inputs, expected_output, iterations=100):
         for _ in range(iterations):
             # Прямое распространение
             l0 = inputs

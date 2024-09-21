@@ -54,11 +54,17 @@ class Robot:
                 return 1  # Увеличиваем счетчик собранного мусора
         return 0
 
+
+
 class LearningRobot(Robot):
     def __init__(self, x, y):
         super().__init__(x, y)
         self.brain = NeuroNet()  # Нейронная сеть для принятия решений
+        self.last_angle = None  # Для хранения предыдущего угла до мусора
         self.last_distance = None  # Для хранения предыдущего расстояния до мусора
+        self.training_step = 0     # Счётчик шагов для управления частотой обучения
+        self.training_interval = 10  # Проводим обучение каждые 10 шагов
+        self.penalty_count = 0  # Счётчик штрафов для усиления поворота
 
     def update(self, trashes):
         # Найти ближайший мусор
@@ -74,23 +80,47 @@ class LearningRobot(Robot):
         left_motor_speed = motor_speeds[0, 0]
         right_motor_speed = motor_speeds[0, 1]
 
+        # Усиление поворота, если робот получил несколько штрафов подряд
+        if self.penalty_count > 10:
+            # Увеличиваем разницу в скоростях моторов для более агрессивного поворота
+            left_motor_speed -= 0.5  # Замедляем левый мотор
+            right_motor_speed += 0.5  # Ускоряем правый мотор
+            print("Усиленный поворот робота из-за штрафа")
+
         # Обновляем положение робота с учетом скоростей
         super().update(left_motor_speed, right_motor_speed)
 
-        # Если это не первый шаг, оцениваем награду за приближение к мусору
-        if self.last_distance is not None:
-            reward = self.calculate_reward(distance)
-            self.train_network(reward)
+        # Оцениваем награду за движение в сторону мусора (если угол уменьшается)
+        if self.last_angle is not None and self.last_distance is not None:
+            reward = self.calculate_angle_distance_reward(angle, distance)
 
-        # Обновляем предыдущее расстояние
+            # Проводим обучение каждые `training_interval` шагов
+            self.training_step += 1
+            if self.training_step % self.training_interval == 0:
+                self.train_network(reward)
+
+        # Обновляем предыдущее значение угла и расстояния
+        self.last_angle = angle
         self.last_distance = distance
 
-    def calculate_reward(self, current_distance):  # sourcery skip: assign-if-exp
-        """Возвращает награду в зависимости от того, приближается ли робот к мусору"""
-        if current_distance < self.last_distance:
-            return 0.1  # Небольшая положительная награда за приближение к мусору
+    def calculate_angle_distance_reward(self, current_angle, current_distance):
+        """
+        Возвращает награду за движение к мусору:
+        - Максимальная награда (1), если угол близок к 0 и расстояние уменьшается.
+        - Нейтральная награда (0), если угол 90 градусов (робот движется перпендикулярно или не двигается к мусору).
+        - Штраф (-1), если угол 180 градусов или расстояние увеличивается.
+        """
+        # Если робот смотрит прямо на мусор и расстояние до него уменьшается
+        if abs(current_angle) % 360 <= 30 and current_distance < self.last_distance:
+            self.penalty_count = 0  # Сброс штрафов, если робот движется в правильную сторону
+            return 1  # Максимальная награда за движение к мусору
+        # Если робот смотрит на мусор, но не движется к нему (расстояние не уменьшается)
+        elif abs(current_angle) % 360 <= 120 and current_distance >= self.last_distance:
+            return 0.5  # Умеренная награда за направление на мусор, но без движения
+        # Если робот движется в противоположную сторону
         else:
-            return -0.1  # Отрицательная награда за отдаление от мусора
+            self.penalty_count += 1  # Увеличиваем счётчик штрафов
+            return -1  # Штраф за неправильное направление и/или отдаление от мусора
 
     def collect_trash(self, trashes):
         # Если робот собрал мусор, возвращаем вознаграждение и обучаем сеть
@@ -98,17 +128,14 @@ class LearningRobot(Robot):
         if collected:
             # Обучаем сеть с наградой за сбор мусора
             self.train_network(1)  # Награда за сбор мусора
-
-        # Если мусор не собран, продолжаем обучение с наградой за направление
-        else:
-            self.train_network(0)  # Награды нет
+            self.penalty_count = 0  # Сброс штрафов при успешном сборе мусора
 
         return collected
 
     def train_network(self, reward):
         """Обучает сеть на основе награды"""
         # Если есть данные для тренировки
-        if self.last_distance is not None:
-            inputs = np.array([self.last_distance, reward]).reshape(1, -1)
+        if self.last_angle is not None:
+            inputs = np.array([0, self.last_angle]).reshape(1, -1)  # Мы тренируемся по углу
             expected_output = np.array([[reward, reward]])  # Ожидаемая награда
-            self.brain.train(inputs, expected_output)  # Тренируем сеть
+            self.brain.train(inputs, expected_output, iterations=100)  # Тренируем сеть

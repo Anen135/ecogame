@@ -1,6 +1,8 @@
 import pygame
 from robot import LearningRobot  # Импорт нового робота с нейронной сетью
 from trash import Trash
+from threading import Thread
+import os, time  # noqa: E401
 
 class Game:
     def __init__(self):
@@ -10,6 +12,8 @@ class Game:
         self.font = pygame.font.SysFont("Arial", 30)
         self.collected_trash_count = 0
         self.clock = pygame.time.Clock()
+        self.thread = Thread(target=self.print_robots_info)
+        self.thread.daemon = True
 
         # Заменяем Robot на LearningRobot с нейронной сетью
         self.robot = LearningRobot(400, 300)
@@ -29,6 +33,17 @@ class Game:
     def display_collected_trash(self):
         # Рендерим текст для отображения количества собранного мусора
         self.screen.blit(self.font.render(f"Собрано мусора: {self.collected_trash_count}", True, (255, 255, 255)), (10, 10))
+    
+    def display_fps(self):
+        # Рендерим FPS
+        self.screen.blit(self.font.render(f"FPS: {self.clock.get_fps():.2f}", True, (255, 255, 255)), (10, 40))
+        
+    def print_robots_info(self):
+        while True:
+            os.system("cls")
+            print(f"Робот: x={self.robot.x}, y={self.robot.y}, угол={self.robot.angle}\n Мусор: dist={self.robot.find_closest_trash(self.trashes)[0]}, dir={abs(self.robot.find_closest_trash(self.trashes)[1]) % 360}")
+            time.sleep(0.5)
+            
     
     def run(self):
         running = True
@@ -60,6 +75,7 @@ class Game:
             
             # Отображение количества собранного мусора
             self.display_collected_trash()
+            self.display_fps()
             
             # Обновление экрана
             pygame.display.flip()
@@ -73,4 +89,5 @@ class Game:
 
 if __name__ == "__main__":
     game = Game()
+    game.thread.start()
     game.run()
